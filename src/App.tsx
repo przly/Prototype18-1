@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CameraIcon, RotateCcwIcon, SlidersHorizontalIcon, VideoIcon, VideoOffIcon } from 'lucide-react';
 import { motion, useReducedMotion, type Variants } from 'motion/react';
+import { TextMorph } from 'torph/react';
 import { useCameraDevices } from './hooks/useCameraDevices';
 import { usePersistentState } from './hooks/usePersistentState';
 import { CameraView, type PeakingSource } from './components/CameraView';
@@ -204,7 +205,8 @@ export default function App() {
           isKeyDown={heldKey === 's'}
         >
           {cameraOn ? <VideoOffIcon /> : <VideoIcon />}
-          {cameraOn ? 'Stop camera' : 'Start camera'}
+          {/* Morphs between the two labels, keeping the shared "camera" in place. */}
+          <TextMorph>{cameraOn ? 'Stop camera' : 'Start camera'}</TextMorph>
           <Kbd className={cameraOn ? undefined : 'bg-[#ff8a1f]/15 text-[#ff8a1f]'}>S</Kbd>
         </PressableButton>
       </div>

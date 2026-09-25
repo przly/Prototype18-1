@@ -3,7 +3,7 @@
 A camera looks down at a floor. People (or objects standing in for them) show up as **blobs**,
 and coloured patches on the floor are **targets**, the holograms. The app finds both in the
 live image, works out who is standing close to which target, and turns it all into a 3D scene:
-each person becomes a figure, each target a hologram (a dancing robot for the first one) with a
+each person becomes a figure, each target a hologram (a dancing robot for the first two) with a
 countdown that only runs while enough people gather around it.
 
 This document explains how it works in plain language. The technical names are in brackets
@@ -150,13 +150,14 @@ and the camera image; it doesn't do any detection itself.
 
 ### Holograms (the targets)
 
-- The first target is an **animated robot**. Its dance moves across the floor in the original
-  file, so the app **pins its hips in place** (it keeps the up-and-down bounce), so it dances on
+- The first two targets are **animated robots**, each with its own model (the second is a
+  variant of the first, on the same rig). Their dance moves across the floor in the original
+  files, so the app **pins their hips in place** (it keeps the up-and-down bounce), so it dances on
   the spot in the middle of its target.
-- The robot dances while its countdown runs and stands still otherwise, easing its dance speed
+- Each robot dances while its countdown runs and stands still otherwise, easing its dance speed
   up and down instead of snapping. It stays fully visible for the first half of the
   countdown, then **fades out** over the second half.
-- Other targets are shown as simple see-through cubes. The cube also stands in while the robot's
+- Other targets are shown as simple see-through cubes. The cube also stands in while a robot's
   model is loading.
 
 ### Grab area on the floor

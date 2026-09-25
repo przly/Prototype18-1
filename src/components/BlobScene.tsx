@@ -17,8 +17,9 @@ import type { TrackedBlob } from '../lib/blobTracker';
 // Width of the tracking plane in world units; height follows the source aspect ratio.
 const WORLD_WIDTH = 16;
 const MODEL_URL = '/models/anime_boy_body_low_poly.glb';
-// Target 1 is shown as this animated model instead of a cube.
-const ROBOT_MODEL_URL = '/models/robot_playground.glb';
+// Targets 1 and 2 are shown as these animated models instead of cubes. Both share the
+// same rig and dance.
+const ROBOT_MODEL_URLS = ['/models/robot_playground.glb', '/models/robot_playground_v2.glb'];
 // Height of every figure in world units, whatever the size of its blob; about what a
 // typical blob gave before, when figures were sized by it.
 const FIGURE_HEIGHT = 1.3;
@@ -240,10 +241,11 @@ export function BlobScene({
                           : 'NICE, INVITE MORE PEOPLE'
                   }
                 />
-                {i === 0 ? (
+                {i < ROBOT_MODEL_URLS.length ? (
                   // The cube stands in while the model loads.
                   <Suspense fallback={cube}>
                     <RobotTarget
+                      url={ROBOT_MODEL_URLS[i]}
                       position={[px, py, 0]}
                       height={TARGET_HEIGHT}
                       playing={p.remainingMs > 0 && p.timerRate > 0}
@@ -824,23 +826,25 @@ const robotLayouts = new WeakMap<
 >();
 
 /**
- * Target 1's model with its built-in animation. It's stood upright out of the floor and
+ * A target's robot model (from `url`) with its built-in animation. It's stood upright out of the floor and
  * scaled to `height`. The animation plays at normal speed while
  * `playing` (the target's countdown is running) and holds still otherwise. It fades out
  * with `opacity` (the fraction of the countdown left).
  */
 function RobotTarget({
+  url,
   position,
   height,
   playing,
   opacity,
 }: {
+  url: string;
   position: [number, number, number];
   height: number;
   playing: boolean;
   opacity: number;
 }) {
-  const { scene, animations } = useGLTF(ROBOT_MODEL_URL);
+  const { scene, animations } = useGLTF(url);
   const root = useRef<THREE.Group>(null);
   const { actions, names } = useAnimations(animations, root);
 
@@ -1023,4 +1027,4 @@ function Figure({ position, lookAt, height, connected }: FigureProps) {
 }
 
 useGLTF.preload(MODEL_URL);
-useGLTF.preload(ROBOT_MODEL_URL);
+ROBOT_MODEL_URLS.forEach((url) => useGLTF.preload(url));

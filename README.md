@@ -119,8 +119,8 @@ with a few differences:
   countdown runs.
 - **Countdown speed.** At exactly the required number it runs at normal speed. Every extra
   person **doubles** the speed: ×2, ×4, ×8…
-- **Refilling.** When fewer people than required are connected, the countdown stops and slowly
-  **fills back up** to full.
+- **Refilling.** When fewer people than required are connected, the countdown stops and
+  **fills back up** to full at 4× normal speed.
 - **Reset.** The yellow button (or the R key) restarts every countdown.
 
 ---
@@ -136,6 +136,16 @@ and the camera image; it doesn't do any detection itself.
   pixels are converted to floor positions, so every figure stands exactly where its person is
   in the image. The floor follows the camera view's horizontal and vertical flips.
 - You can orbit, pan and zoom the camera with the mouse.
+- When a target has enough people connected for its countdown to run, the camera **eases 20%
+  closer** to it and slides the view part of the way over to it. With two or more running
+  they **battle for the camera**: each pulls it by its number of people (squared, so a lead
+  counts extra). An even split frames them together at **15% closer**; the more one leads, the
+  further the camera leans over to it and zooms in, up to 20%. When a different
+  target takes over, the camera glides straight across; with none running it eases back out.
+  The camera only moves when **someone connects** to a target: people leaving don't change it,
+  so it holds its framing until the next person joins (then catches up with everything,
+  including zooming back out if nothing is running any more).
+  It moves together with your own orbiting and zooming instead of taking the camera over.
 
 ### Figures (the people)
 
@@ -166,7 +176,7 @@ The circle around each target shows its state at a glance:
 
 | State | Colour | Stroke | Text around the circle |
 |---|---|---|---|
-| Nobody connected | Blue | Dashed, dashes moving | MOVE CLOSER |
+| Nobody connected | Blue | Dashed, dashes moving (solid while the timer refills) | MOVE CLOSER |
 | Some, but not enough | Yellow | Solid | WATCHING ALONE IS BORING, RIGHT? · FIND COMPANY |
 | Enough connected | Green | Solid, stronger | NICE, INVITE MORE PEOPLE |
 | Countdown past halfway | Orange | as above | OH NO · YOU SHOULD GIVE MORE ATTENTION TO OTHER HOLOGRAMS |
@@ -194,7 +204,7 @@ The circle around each target shows its state at a glance:
 
 ## Interface
 
-- **Control panel** (left, **H** to hide or show): detection mode and threshold, blob size limits,
+- **Control panel** (left, hidden at start, **H** to show or hide): detection mode and threshold, blob size limits,
   target colour, tolerance and size, grab area size, required connections, timer length,
   spotlights, test mode, and camera flips.
 - **Camera view** (bottom right, **C** to hide or show): the camera image with the detected

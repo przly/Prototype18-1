@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
   Edges,
   GizmoHelper,
@@ -56,6 +56,22 @@ const MIN_LIGHT_LEVEL = 0.15;
 const MAX_LIGHT_LEVEL = 2;
 // How quickly a spotlight eases to a new light level; lower is slower (about 1 / seconds).
 const LIGHT_LEVEL_EASING = 1;
+// How much closer the camera moves to the activated targets (those with enough people for
+// their countdown to run), as a fraction of its distance: for one, and for two or more
+// evenly matched (framing them all); how far the view also slides towards them, as a fraction of the way
+// from the orbit centre; and how quickly it eases there and back: the rate of each of the
+// smoothing stages chained in ActiveTargetZoom (about 1 / seconds each; three at 5 settle
+// in about 1.5 s).
+const ACTIVE_ZOOM = 0.2;
+const ACTIVE_ZOOM_SEVERAL = 0.15;
+const ACTIVE_PAN = 0.3;
+const ACTIVE_ZOOM_EASING = 5;
+// With several activated targets, each pulls the camera by its connection count raised to
+// this power, so a lead in people wins more than its share of the view.
+const ATTENTION_BIAS = 2;
+// Longest frame gap the zoom steps through at once, in seconds, so coming back to the tab
+// after a while eases on instead of jumping.
+const MAX_ZOOM_STEP = 1 / 20;
 
 export interface SceneInterestPoint {
   id: number;
@@ -131,6 +147,35 @@ export function BlobScene({
           MAX_LIGHT_LEVEL,
         ),
   );
+
+  // What the camera zooms towards, at robot mid-height: the activated targets battle for it.
+  // Each pulls by its connections (see ATTENTION_BIAS), so an even split frames them all at
+  // ACTIVE_ZOOM_SEVERAL, and the more one leads, the nearer the camera goes to it and the
+  // closer it zooms, up to ACTIVE_ZOOM for a single one. The scene's z-up coordinates are
+  // turned into three.js's y-up world ones here.
+  const active = interestPoints.flatMap((p, i) =>
+    p.connectedBlobIds.length >= requiredConnections
+      ? [{ position: pointPositions[i], pull: p.connectedBlobIds.length ** ATTENTION_BIAS }]
+      : [],
+  );
+  let zoomFocus: ZoomFocus | null = null;
+  if (active.length > 0) {
+    const totalPull = active.reduce((sum, a) => sum + a.pull, 0);
+    const [sx, sy] = active.reduce(
+      ([ax, ay], { position: [x, y], pull }) => [ax + x * pull, ay + y * pull],
+      [0, 0],
+    );
+    // How much the strongest one leads: 0 for an even split, 1 when it has all the pull.
+    const evenShare = 1 / active.length;
+    const lead =
+      active.length > 1
+        ? (Math.max(...active.map((a) => a.pull)) / totalPull - evenShare) / (1 - evenShare)
+        : 1;
+    zoomFocus = {
+      position: [sx / totalPull, TARGET_HEIGHT / 2, -sy / totalPull],
+      zoom: THREE.MathUtils.lerp(ACTIVE_ZOOM_SEVERAL, ACTIVE_ZOOM, lead),
+    };
+  }
 
   function nearestPointTo(b: TrackedBlob): [number, number, number] | null {
     let nearest: [number, number, number] | null = null;
@@ -230,7 +275,9 @@ export function BlobScene({
                       ? 0.5
                       : GRAB_AREA_OPACITY
                   }
-                  dashed={count === 0}
+                  // Dashed while nobody is near, but solid while the timer is filling back
+                  // up, so the refill reads as one continuous line.
+                  dashed={count === 0 && p.remainingMs >= timerLengthMs}
                   text={
                     fading
                       ? ['OH NO', 'YOU SHOULD GIVE MORE ATTENTION TO OTHER HOLOGRAMS']
@@ -277,6 +324,12 @@ export function BlobScene({
         </group>
 
         <OrbitControls enableDamping makeDefault />
+        <ActiveTargetZoom
+          focus={zoomFocus}
+          connections={interestPoints.flatMap((p) =>
+            p.connectedBlobIds.map((blobId) => `${p.id}:${blobId}`),
+          )}
+        />
         <GizmoHelper alignment="bottom-left" margin={[56, 56]}>
           {/* Rotated with the scene so it shows the scene's own axes. Clicking is disabled
               because the gizmo would tween the camera along the unrotated axis. */}
@@ -393,10 +446,131 @@ function FloorFeed({
 
 // Width of the grab area's stroke, and the length of a dash (and of the gap after it)
 // when it's dashed, in world units.
-const GRAB_RING_WIDTH = 0.04;
+const GRAB_RING_WIDTH = 0.08;
 const GRAB_RING_DASH = 0.2;
 // How fast the dashes travel around the ring, in world units per second along the stroke.
 const GRAB_RING_DASH_SPEED = 0.3;
+
+interface ZoomFocus {
+  /** World position to zoom towards and centre on. */
+  position: [number, number, number];
+  /** How much closer to move, as a fraction of the camera's distance. */
+  zoom: number;
+}
+
+/** A zoom as applied to the camera: scaled about `point` by 1 - `zoom`, then slid by `pan`. */
+interface ZoomOffset {
+  point: THREE.Vector3;
+  zoom: number;
+  pan: THREE.Vector3;
+}
+
+/**
+ * Eases the camera `focus.zoom` of the way towards `focus` and slides the view ACTIVE_PAN
+ * of the way over to it, and back out when there's no focus.
+ *
+ * Only a new connection (a person joining a target, one of `connections`, as
+ * "targetId:blobId") moves the camera on to the current `focus`; people leaving don't, so
+ * it keeps its framing until the next person joins.
+ *
+ * Each frame undoes the offset it applied last frame, which gives back the camera as the
+ * orbit controls (and the user) left it, then applies a new one. The offset's point, zoom
+ * and slide each ease towards their goals, so a new focus is glided to directly, without
+ * going back out first, and with no focus everything eases back to exactly the user's view.
+ *
+ * The easing runs each goal through three chained smoothing stages. That starts and stops
+ * gently, like an ease-in-out, but also turns around mid-way without a jolt, and a target
+ * that flickers in and out of being activated only nudges the camera.
+ */
+function ActiveTargetZoom({
+  focus: currentFocus,
+  connections,
+}: {
+  focus: ZoomFocus | null;
+  connections: string[];
+}) {
+  const camera = useThree((s) => s.camera);
+  // The focus as of the last new connection, and the connections seen last frame.
+  const heldFocus = useRef<ZoomFocus | null>(null);
+  const lastConnections = useRef(new Set<string>());
+  const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3 } | null;
+  // The smoothing stages for the point, zoom and slide (the last stage is what's applied),
+  // and whether an offset is currently applied at all.
+  const state = useRef({
+    points: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()],
+    zooms: [0, 0, 0],
+    pans: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()],
+    active: false,
+  });
+  const goalPoint = useMemo(() => new THREE.Vector3(), []);
+  const goalPan = useMemo(() => new THREE.Vector3(), []);
+
+  useFrame((_, delta) => {
+    if (!controls) return;
+    if (connections.some((c) => !lastConnections.current.has(c))) heldFocus.current = currentFocus;
+    lastConnections.current = new Set(connections);
+    const focus = heldFocus.current;
+    const st = state.current;
+    const views = [camera.position, controls.target];
+
+    // Back to the user's own view: undo last frame's slide, then its scaling.
+    const applied: ZoomOffset = { point: st.points[2], zoom: st.zooms[2], pan: st.pans[2] };
+    if (st.active) {
+      for (const v of views) {
+        v.sub(applied.pan).sub(applied.point).divideScalar(1 - applied.zoom).add(applied.point);
+      }
+    }
+
+    if (!focus && !st.active) return;
+
+    // Goals, measured from the user's view. With no focus, the point stays where it was
+    // (it has no effect once the zoom is back to 0).
+    let goalZoom = 0;
+    goalPan.set(0, 0, 0);
+    if (focus) {
+      goalPoint.set(...focus.position);
+      goalZoom = focus.zoom;
+      goalPan.copy(goalPoint).sub(controls.target).multiplyScalar(ACTIVE_PAN);
+      // Starting from rest, the point has no effect yet, so it can start at the focus.
+      if (!st.active) for (const p of st.points) p.copy(goalPoint);
+    } else {
+      goalPoint.copy(st.points[0]);
+    }
+
+    const dt = Math.min(delta, MAX_ZOOM_STEP);
+    const k = 1 - Math.exp(-ACTIVE_ZOOM_EASING * dt);
+    st.points[0].lerp(goalPoint, k);
+    st.points[1].lerp(st.points[0], k);
+    st.points[2].lerp(st.points[1], k);
+    st.pans[0].lerp(goalPan, k);
+    st.pans[1].lerp(st.pans[0], k);
+    st.pans[2].lerp(st.pans[1], k);
+    st.zooms[0] += (goalZoom - st.zooms[0]) * k;
+    st.zooms[1] += (st.zooms[0] - st.zooms[1]) * k;
+    st.zooms[2] += (st.zooms[1] - st.zooms[2]) * k;
+
+    // Fully back out: finish at exactly nothing (a step far too small to see) and rest.
+    if (
+      !focus &&
+      st.zooms.every((z) => Math.abs(z) < 1e-4) &&
+      st.pans.every((p) => p.lengthSq() < 1e-8)
+    ) {
+      st.zooms.fill(0);
+      for (const p of st.pans) p.set(0, 0, 0);
+      st.active = false;
+      return;
+    }
+
+    // Apply the new offset: scale about its point, then slide.
+    const [point, zoom, pan] = [st.points[2], st.zooms[2], st.pans[2]];
+    for (const v of views) {
+      v.sub(point).multiplyScalar(1 - zoom).add(point).add(pan);
+    }
+    st.active = true;
+  });
+
+  return null;
+}
 
 interface GrabRingProps {
   position: [number, number, number];

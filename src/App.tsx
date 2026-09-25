@@ -50,7 +50,7 @@ export default function App() {
   const [spotlightDensity, setSpotlightDensity] = usePersistentState('spotlightDensity', 100);
   // The start/stop camera button (or S) turns the camera stream on and off. It starts off.
   const [cameraOn, setCameraOn] = useState(false);
-  const [controlsOpen, setControlsOpen] = useState(true);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [cameraViewOpen, setCameraViewOpen] = useState(true);
   // The Controls and Camera buttons slide the same way as their panels, in the opposite state.
   const reduceMotion = useReducedMotion();

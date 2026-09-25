@@ -4,7 +4,7 @@ export const DEFAULT_TIMER_MS = 4 * 60 * 1000;
 export const TIMER_SPEEDUP_PER_CONNECTION = 2;
 
 // How fast a countdown fills back up while it's below the requirement, as a multiple of normal.
-export const TIMER_REGEN_RATE = 1;
+export const TIMER_REGEN_RATE = 4;
 
 /** Countdown speed multiplier: 0 below the requirement (it regenerates then, see TIMER_REGEN_RATE), 1× at it, doubling for each extra connection. */
 export function timerRate(connections: number, requiredConnections: number): number {

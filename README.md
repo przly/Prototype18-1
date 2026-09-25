@@ -142,9 +142,9 @@ and the camera image; it doesn't do any detection itself.
   counts extra). An even split frames them together at **15% closer**; the more one leads, the
   further the camera leans over to it and zooms in, up to 20%. When a different
   target takes over, the camera glides straight across; with none running it eases back out.
-  The camera only moves when **someone connects** to a target or a target **stops running**
-  (then it re-frames the ones still running, or goes back to your own view if none are).
-  Other people leaving don't move it.
+  The camera only moves when **someone connects to or leaves** a target (then it re-frames the
+  ones running, or goes back to your own view if none are), not while the targets' tracked
+  positions shift a little in between.
   It moves together with your own orbiting and zooming instead of taking the camera over.
 
 ### Figures (the people)

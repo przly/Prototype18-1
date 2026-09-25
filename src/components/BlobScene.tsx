@@ -329,9 +329,6 @@ export function BlobScene({
           connections={interestPoints.flatMap((p) =>
             p.connectedBlobIds.map((blobId) => `${p.id}:${blobId}`),
           )}
-          activeTargetIds={interestPoints.flatMap((p) =>
-            p.connectedBlobIds.length >= requiredConnections ? [p.id] : [],
-          )}
         />
         <GizmoHelper alignment="bottom-left" margin={[56, 56]}>
           {/* Rotated with the scene so it shows the scene's own axes. Clicking is disabled
@@ -472,10 +469,10 @@ interface ZoomOffset {
  * Eases the camera `focus.zoom` of the way towards `focus` and slides the view ACTIVE_PAN
  * of the way over to it, and back out when there's no focus.
  *
- * Only a new connection (a person joining a target, one of `connections`, as
- * "targetId:blobId") or a target being deactivated (dropping out of `activeTargetIds`) moves
- * the camera on to the current `focus`, so it goes back to the user's view once no target
- * is active. Other people leaving don't move it.
+ * Only a change in `connections` (a person joining or leaving a target, as
+ * "targetId:blobId") moves the camera on to the current `focus`, so it goes back to the
+ * user's view once no target is active. In between, the targets' tracked positions shifting
+ * a little doesn't move it.
  *
  * Each frame undoes the offset it applied last frame, which gives back the camera as the
  * orbit controls (and the user) left it, then applies a new one. The offset's point, zoom
@@ -489,18 +486,14 @@ interface ZoomOffset {
 function ActiveTargetZoom({
   focus: currentFocus,
   connections,
-  activeTargetIds,
 }: {
   focus: ZoomFocus | null;
   connections: string[];
-  activeTargetIds: number[];
 }) {
   const camera = useThree((s) => s.camera);
-  // The focus as of the last change that moves the camera, and the connections and active
-  // targets seen last frame.
+  // The focus as of the last change in connections, and the connections seen last frame.
   const heldFocus = useRef<ZoomFocus | null>(null);
   const lastConnections = useRef(new Set<string>());
-  const lastActiveIds = useRef<number[]>([]);
   const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3 } | null;
   // The smoothing stages for the point, zoom and slide (the last stage is what's applied),
   // and whether an offset is currently applied at all.
@@ -515,11 +508,11 @@ function ActiveTargetZoom({
 
   useFrame((_, delta) => {
     if (!controls) return;
-    const joined = connections.some((c) => !lastConnections.current.has(c));
-    const deactivated = lastActiveIds.current.some((id) => !activeTargetIds.includes(id));
-    if (joined || deactivated) heldFocus.current = currentFocus;
+    const changed =
+      connections.length !== lastConnections.current.size ||
+      connections.some((c) => !lastConnections.current.has(c));
+    if (changed) heldFocus.current = currentFocus;
     lastConnections.current = new Set(connections);
-    lastActiveIds.current = activeTargetIds;
     const focus = heldFocus.current;
     const st = state.current;
     const views = [camera.position, controls.target];

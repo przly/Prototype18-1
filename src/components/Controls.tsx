@@ -5,7 +5,7 @@ import { hasUsableHue, type DetectionMode } from '../lib/blobDetection';
 import { hexToRgb } from '../lib/color';
 import { formatTimer } from '../lib/timer';
 import { PANEL_STACK_VARIANTS, panelVariants } from '../lib/panelMotion';
-import { Button } from '@/components/ui/button';
+import { PressableButton } from './PressableButton';
 import { Card, CardAction, CardHeader, CardPanel, CardTitle } from '@/components/ui/card';
 import { Kbd } from '@/components/ui/kbd';
 import { Label } from '@/components/ui/label';
@@ -29,6 +29,8 @@ interface Props {
   targetColor: string;
   isPickingColor: boolean;
   onPickingColorChange: (picking: boolean) => void;
+  /** Esc is held; it cancels picking, so the Pick/Cancel button shows it as a press. */
+  isCancelPickKeyDown: boolean;
   targetTolerance: number;
   onTargetToleranceChange: (v: number) => void;
   onTargetToleranceAdjustingChange: (adjusting: boolean) => void;
@@ -87,6 +89,7 @@ export function Controls({
   targetColor,
   isPickingColor,
   onPickingColorChange,
+  isCancelPickKeyDown,
   targetTolerance,
   onTargetToleranceChange,
   onTargetToleranceAdjustingChange,
@@ -216,14 +219,15 @@ export function Controls({
                     style={{ background: targetColor }}
                   />
                   <span className="text-muted-foreground text-sm tabular-nums">{targetColor}</span>
-                  <Button
+                  <PressableButton
                     size="sm"
                     variant={isPickingColor ? 'default' : 'outline'}
                     onClick={() => onPickingColorChange(!isPickingColor)}
+                    isKeyDown={isCancelPickKeyDown}
                   >
                     <PipetteIcon />
                     {isPickingColor ? 'Cancel' : 'Pick'}
-                  </Button>
+                  </PressableButton>
                 </div>
               </div>
               {isPickingColor ? (

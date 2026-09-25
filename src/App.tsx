@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CameraIcon, RotateCcwIcon, SlidersHorizontalIcon } from 'lucide-react';
+import { CameraIcon, RotateCcwIcon, SlidersHorizontalIcon, VideoIcon, VideoOffIcon } from 'lucide-react';
 import { motion, useReducedMotion, type Variants } from 'motion/react';
 import { useCameraDevices } from './hooks/useCameraDevices';
 import { usePersistentState } from './hooks/usePersistentState';
@@ -8,7 +8,7 @@ import { Controls, GRAB_AREA_MAX, GRAB_AREA_MIN } from './components/Controls';
 import { DEFAULT_TIMER_MS } from './lib/timer';
 import { PRESS_SPRING, RELEASE_SPRING } from './lib/pressMotion';
 import { panelVariants } from './lib/panelMotion';
-import { Button } from '@/components/ui/button';
+import { PressableButton } from './components/PressableButton';
 import { Kbd } from '@/components/ui/kbd';
 import type { DetectionMode } from './lib/blobDetection';
 import './App.css';
@@ -47,6 +47,8 @@ export default function App() {
   // Spotlight brightness and beam haze, in percent of normal.
   const [spotlightLight, setSpotlightLight] = usePersistentState('spotlightLight', 100);
   const [spotlightDensity, setSpotlightDensity] = usePersistentState('spotlightDensity', 100);
+  // The start/stop camera button (or S) turns the camera stream on and off. It starts off.
+  const [cameraOn, setCameraOn] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(true);
   const [cameraViewOpen, setCameraViewOpen] = useState(true);
   // The Controls and Camera buttons slide the same way as their panels, in the opposite state.
@@ -54,12 +56,14 @@ export default function App() {
   const showControlsVariants = panelVariants(reduceMotion);
   const showCameraViewVariants = panelVariants(reduceMotion, 'right');
 
-  // Held down while R is, so the reset button shows its pressed state for the key too.
-  const [isResetKeyDown, setIsResetKeyDown] = useState(false);
+  // The shortcut key being held, so its button shows the same pressed state as a click.
+  const [heldKey, setHeldKey] = useState<string | null>(null);
 
-  // Keyboard shortcuts: H shows or hides the control panel, C the camera view, R resets the
-  // hologram timers (on key-down, like the button's press). Skipped while typing into a field,
-  // on key repeat and with modifier keys.
+  // Keyboard shortcuts, each acting like a press of its button: H shows or hides the control
+  // panel, C the camera view, S starts or stops the camera (not in test mode, where its button
+  // is disabled), R resets the hologram timers, and Esc cancels picking a colour (only while
+  // picking, when the Pick button reads Cancel). They act on key-down, like a button's press.
+  // Skipped while typing into a field, on key repeat and with modifier keys.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -68,17 +72,18 @@ export default function App() {
       const key = e.key.toLowerCase();
       if (key === 'h') setControlsOpen((open) => !open);
       else if (key === 'c') setCameraViewOpen((open) => !open);
-      else if (key === 'escape') setIsPickingColor(false);
-      else if (key === 'r') {
-        setIsResetKeyDown(true);
-        setTimerResetCount((n) => n + 1);
-      }
+      else if (key === 's' && !testMode) setCameraOn((on) => !on);
+      else if (key === 'escape' && isPickingColor) setIsPickingColor(false);
+      else if (key === 'r') setTimerResetCount((n) => n + 1);
+      else return;
+      setHeldKey(key);
     }
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key.toLowerCase() === 'r') setIsResetKeyDown(false);
+      const key = e.key.toLowerCase();
+      setHeldKey((held) => (held === key ? null : held));
     }
     // A key released while the window is in the background never sends keyup.
-    const releaseAll = () => setIsResetKeyDown(false);
+    const releaseAll = () => setHeldKey(null);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', releaseAll);
@@ -87,7 +92,7 @@ export default function App() {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', releaseAll);
     };
-  }, []);
+  }, [testMode, isPickingColor]);
 
   useEffect(() => {
     if (!deviceId && devices.length > 0) {
@@ -130,6 +135,7 @@ export default function App() {
             targetColor={targetColor}
             isPickingColor={isPickingColor}
             onPickingColorChange={setIsPickingColor}
+            isCancelPickKeyDown={heldKey === 'escape'}
             targetTolerance={targetTolerance}
             onTargetToleranceChange={setTargetTolerance}
             onTargetToleranceAdjustingChange={(on) => setAdjustingThreshold(on ? 'targets' : null)}
@@ -153,48 +159,59 @@ export default function App() {
             onFlipYChange={setFlipY}
           />
         </div>
-        <Button
+        <PressableButton
           variant="outline"
           className={`absolute top-0 left-0 ${controlsOpen ? '' : 'pointer-events-auto'}`}
           inert={controlsOpen}
           onClick={() => setControlsOpen(true)}
-          render={
-            <motion.button
-              type="button"
-              variants={showControlsVariants}
-              initial={false}
-              animate={controlsOpen ? 'closed' : 'open'}
-            />
-          }
+          variants={showControlsVariants}
+          state={controlsOpen ? 'closed' : 'open'}
+          isKeyDown={heldKey === 'h'}
         >
           <SlidersHorizontalIcon />
           Controls
           <Kbd>H</Kbd>
-        </Button>
+        </PressableButton>
       </div>
       {/* Brings the camera view back; it sits where the view's corner does while it's hidden. */}
-      <Button
+      <PressableButton
         variant="outline"
         className={`fixed right-4 bottom-4 z-20 ${cameraViewOpen ? 'pointer-events-none' : ''}`}
         inert={cameraViewOpen}
         onClick={() => setCameraViewOpen(true)}
-        render={
-          <motion.button
-            type="button"
-            variants={showCameraViewVariants}
-            initial={false}
-            animate={cameraViewOpen ? 'closed' : 'open'}
-          />
-        }
+        variants={showCameraViewVariants}
+        state={cameraViewOpen ? 'closed' : 'open'}
+        isKeyDown={heldKey === 'c'}
       >
         <CameraIcon />
         Camera
         <Kbd>C</Kbd>
-      </Button>
+      </PressableButton>
+      <div className="fixed top-4 left-1/2 z-20 -translate-x-1/2">
+        {/* The camera isn't used in test mode, so there's nothing to start or stop. */}
+        <PressableButton
+          variant="outline"
+          // The right padding matches the reset button's, so the S key sits as evenly in it.
+          // While stopped it's a faint wash of the scene's warning orange, so it's noticed
+          // without drawing much attention.
+          className={
+            cameraOn
+              ? 'pe-[7px] sm:pe-[5px]'
+              : 'pe-[7px] sm:pe-[5px] border-[#ff8a1f]/40 bg-[#ff8a1f]/15 text-[#ff8a1f] backdrop-blur-sm hover:bg-[#ff8a1f]/25 data-pressed:bg-[#ff8a1f]/25 dark:bg-[#ff8a1f]/15 dark:hover:bg-[#ff8a1f]/25 dark:data-pressed:bg-[#ff8a1f]/25'
+          }
+          disabled={testMode}
+          onClick={() => setCameraOn((on) => !on)}
+          isKeyDown={heldKey === 's'}
+        >
+          {cameraOn ? <VideoOffIcon /> : <VideoIcon />}
+          {cameraOn ? 'Stop camera' : 'Start camera'}
+          <Kbd className={cameraOn ? undefined : 'bg-[#ff8a1f]/15 text-[#ff8a1f]'}>S</Kbd>
+        </PressableButton>
+      </div>
       <div className="fixed bottom-4 left-1/2 z-20 -translate-x-1/2">
         <ResetTimersButton
           onReset={() => setTimerResetCount((n) => n + 1)}
-          isKeyDown={isResetKeyDown}
+          isKeyDown={heldKey === 'r'}
         />
       </div>
       <CameraView
@@ -218,6 +235,7 @@ export default function App() {
         triggerRadius={triggerRadius}
         requiredConnections={requiredConnections}
         testMode={testMode}
+        cameraOn={cameraOn}
         flipX={!testMode && flipX}
         flipY={!testMode && flipY}
         timerResetCount={timerResetCount}
@@ -229,44 +247,23 @@ export default function App() {
   );
 }
 
-const RESET_BUTTON_VARIANTS: Variants = {
-  rest: { scale: 1 },
-  hover: { scale: 1.03 },
-  press: { scale: 0.96, transition: PRESS_SPRING },
-};
 // The icon turns the way a reset goes, hinting at the action before it's taken.
 const RESET_ICON_VARIANTS: Variants = {
   rest: { rotate: 0 },
   hover: { rotate: -30 },
   press: { rotate: -60, transition: PRESS_SPRING },
 };
-// Reduced motion: no scaling or spinning, just a gentle dim while pressed.
-const RESET_BUTTON_VARIANTS_REDUCED: Variants = {
-  rest: { opacity: 1 },
-  press: { opacity: 0.8, transition: { duration: 0.1 } },
-};
 
 /** `isKeyDown`: its keyboard shortcut is held, so it shows the same press as a click. */
 function ResetTimersButton({ onReset, isKeyDown }: { onReset: () => void; isKeyDown: boolean }) {
   const reduceMotion = useReducedMotion();
   return (
-    <Button
+    <PressableButton
       // The right padding matches the space above and below the R key: button height (36px,
       // 32px from sm) minus the key's 20px, halved, minus the 1px border.
       className="border-[#FFE000] bg-[#FFE000] pe-[7px] text-black shadow-[#FFE000]/24 hover:bg-[#FFE000]/90 data-pressed:bg-[#FFE000]/90 sm:pe-[5px]"
       onClick={onReset}
-      render={
-        <motion.button
-          type="button"
-          variants={reduceMotion ? RESET_BUTTON_VARIANTS_REDUCED : RESET_BUTTON_VARIANTS}
-          initial={false}
-          animate={isKeyDown ? 'press' : 'rest'}
-          // Hover outranks `animate` in Motion, so drop it while the key holds the press.
-          whileHover={isKeyDown ? undefined : 'hover'}
-          whileTap="press"
-          transition={RELEASE_SPRING}
-        />
-      }
+      isKeyDown={isKeyDown}
     >
       <motion.span
         className="inline-flex"
@@ -277,6 +274,6 @@ function ResetTimersButton({ onReset, isKeyDown }: { onReset: () => void; isKeyD
       </motion.span>
       Reset hologram timers
       <Kbd className="bg-black/10 text-black/60">R</Kbd>
-    </Button>
+    </PressableButton>
   );
 }

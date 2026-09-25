@@ -69,6 +69,8 @@ interface Props {
   triggerRadius: number;
   requiredConnections: number;
   testMode: boolean;
+  /** Whether the camera is running; while off, nothing is tracked. Ignored in test mode. */
+  cameraOn: boolean;
   /** Mirror the camera view left-to-right. */
   flipX: boolean;
   /** Mirror the camera view top-to-bottom. */
@@ -81,6 +83,9 @@ interface Props {
   spotlightLight: number;
   spotlightDensity: number;
 }
+
+// The feed box's height change, matching the panels' springs: no overshoot.
+const FEED_HEIGHT_SPRING = { type: 'spring', bounce: 0, duration: 0.4 } as const;
 
 export function CameraView({
   open,
@@ -100,6 +105,7 @@ export function CameraView({
   triggerRadius,
   requiredConnections,
   testMode,
+  cameraOn,
   flipX,
   flipY,
   timerResetCount,
@@ -143,6 +149,19 @@ export function CameraView({
   // Blue areas in the feed, oldest first; each one is a target.
   const [targets, setTargets] = useState<TrackedBlob[]>([]);
   const [displaySize, setDisplaySize] = useState({ width: 0, height: 0 });
+  // Height of the feed's content, which the feed box springs to instead of jumping when the
+  // camera starts or stops and the picture changes shape. Null until first measured.
+  const feedContentRef = useRef<HTMLDivElement>(null);
+  const [feedHeight, setFeedHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const content = feedContentRef.current;
+    if (!content) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setFeedHeight(entry.borderBoxSize[0].blockSize);
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
   const [error, setError] = useState<string | null>(null);
 
   // Picks the average colour of a small patch of the latest frame under the click.
@@ -308,7 +327,15 @@ export function CameraView({
       setError(null);
       return;
     }
+    if (!cameraOn) {
+      // No new frames arrive while it's off, so drop what was last seen.
+      setError(null);
+      setBlobs([]);
+      setTargets([]);
+      return;
+    }
 
+    const video = videoRef.current;
     let stream: MediaStream | null = null;
     let cancelled = false;
 
@@ -317,9 +344,9 @@ export function CameraView({
         stream = await navigator.mediaDevices.getUserMedia({
           video: deviceId ? { deviceId: { exact: deviceId } } : true,
         });
-        if (cancelled || !videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        if (cancelled || !video) return;
+        video.srcObject = stream;
+        await video.play();
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not access camera');
@@ -330,8 +357,10 @@ export function CameraView({
     return () => {
       cancelled = true;
       stream?.getTracks().forEach((t) => t.stop());
+      // Detaching the stream empties the video, so the last frame isn't tracked on.
+      if (video) video.srcObject = null;
     };
-  }, [deviceId, testMode]);
+  }, [deviceId, testMode, cameraOn]);
 
   useEffect(() => {
     const processCanvas = document.createElement('canvas');
@@ -462,8 +491,14 @@ export function CameraView({
             to hide
           </span>
         </div>
-        <div className="camera-view__feed">
+        <motion.div
+          className="camera-view__feed"
+          initial={false}
+          animate={feedHeight === null ? undefined : { height: feedHeight }}
+          transition={reduceMotion ? { duration: 0 } : FEED_HEIGHT_SPRING}
+        >
           <div
+            ref={feedContentRef}
             className="camera-view__mirror"
             style={{ transform: `scale(${flipX ? -1 : 1}, ${flipY ? -1 : 1})` }}
           >
@@ -555,7 +590,7 @@ export function CameraView({
             </div>
           )}
           {error && <p className="camera-view__error">{error}</p>}
-        </div>
+        </motion.div>
       </motion.div>
       <BlobScene
         blobs={blobs}

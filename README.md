@@ -202,6 +202,8 @@ The circle around each target shows its state at a glance:
   while it's hidden.
 - Both panels **slide out to their edge**, fading and blurring as they go, and a small button
   appears to bring them back. With the system's reduced-motion setting on, they only fade.
+- **Start/stop camera** (top centre, **S**): turns the camera on and off. It's off when the app opens. While it's off
+  nothing is tracked, so the figures and holograms disappear. It's disabled in test mode.
 - **R** resets the timers, **Esc** cancels picking a colour.
 - **Every setting is saved** in the browser and restored the next time the app opens.
 - **Test mode** replaces the camera with a drawn scene of draggable circles and targets, for
